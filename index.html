@@ -1,0 +1,758 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>均摊成本计算器</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet"/>
+<style>
+  :root {
+    --bg: #060608;
+    --surface: #0e0e14;
+    --surface2: #16161f;
+    --surface3: #1e1e2a;
+    --border: #252535;
+    --accent: #00e676;
+    --accent-dim: rgba(0,230,118,0.12);
+    --red: #ff4d6d;
+    --red-dim: rgba(255,77,109,0.12);
+    --blue: #5c9eff;
+    --blue-dim: rgba(92,158,255,0.12);
+    --yellow: #ffd166;
+    --text: #e8e8f2;
+    --muted: #55556a;
+    --mono: 'Space Mono', monospace;
+    --sans: 'Noto Sans SC', sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+  }
+
+  /* Dot grid bg */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: radial-gradient(circle, rgba(0,230,118,0.08) 1px, transparent 1px);
+    background-size: 28px 28px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 24px 16px; position: relative; z-index: 1; }
+
+  /* ── Header ── */
+  .header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 28px; flex-wrap: wrap; gap: 12px;
+  }
+  .logo-text { font-size: 24px; font-weight: 900; letter-spacing: -0.5px; }
+  .logo-text em { color: var(--accent); font-style: normal; }
+  .logo-sub { font-family: var(--mono); font-size: 10px; color: var(--muted); letter-spacing: 2px; margin-top: 3px; }
+
+  /* ── Ticker tabs ── */
+  .ticker-bar {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 16px 20px;
+    margin-bottom: 20px;
+  }
+  .ticker-bar-top {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px;
+  }
+  .ticker-bar-label { font-family: var(--mono); font-size: 10px; color: var(--muted); letter-spacing: 2px; text-transform: uppercase; }
+  .ticker-tabs { display: flex; gap: 8px; flex-wrap: wrap; flex: 1; }
+  .ticker-tab {
+    font-family: var(--mono); font-size: 12px; font-weight: 700;
+    padding: 6px 14px; border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--surface2); color: var(--muted);
+    cursor: pointer; transition: all 0.2s; position: relative;
+  }
+  .ticker-tab:hover { color: var(--text); border-color: var(--accent); }
+  .ticker-tab.active { background: var(--accent-dim); color: var(--accent); border-color: var(--accent); }
+  .ticker-tab .tab-price { font-size: 10px; color: var(--muted); display: block; margin-top: 2px; }
+  .ticker-tab.active .tab-price { color: var(--accent); }
+  .ticker-tab .tab-remove {
+    position: absolute; top: -6px; right: -6px;
+    width: 16px; height: 16px; border-radius: 50%;
+    background: var(--red); color: #fff; font-size: 9px;
+    display: none; align-items: center; justify-content: center;
+    cursor: pointer; border: none;
+  }
+  .ticker-tab:hover .tab-remove { display: flex; }
+
+  .add-ticker-wrap { display: flex; gap: 8px; align-items: center; }
+  .add-ticker-in {
+    background: var(--surface2); border: 1px solid var(--border);
+    color: var(--text); font-family: var(--mono); font-size: 13px; font-weight: 700;
+    text-transform: uppercase; padding: 7px 12px; border-radius: 8px; width: 100px; outline: none;
+  }
+  .add-ticker-in:focus { border-color: var(--accent); }
+  .btn-add-ticker {
+    background: var(--accent-dim); color: var(--accent); border: 1px solid var(--accent);
+    font-family: var(--mono); font-size: 11px; font-weight: 700; letter-spacing: 1px;
+    padding: 7px 14px; border-radius: 8px; cursor: pointer; transition: 0.2s;
+  }
+  .btn-add-ticker:hover { background: var(--accent); color: #000; }
+
+  /* ── Price display ── */
+  .price-row {
+    display: flex; align-items: center; gap: 20px; flex-wrap: wrap;
+  }
+  .live-price { font-family: var(--mono); font-size: 36px; font-weight: 700; color: var(--accent); transition: color 0.3s; }
+  .live-price.down { color: var(--red); }
+  .price-badge {
+    font-family: var(--mono); font-size: 12px; padding: 4px 10px; border-radius: 6px;
+    background: var(--accent-dim); color: var(--accent);
+  }
+  .price-badge.neg { background: var(--red-dim); color: var(--red); }
+  .price-meta { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-left: auto; display: flex; align-items: center; gap: 8px; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); display: inline-block; animation: pulse 2s infinite; }
+  .dot.live { background: var(--accent); }
+  @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.4;transform:scale(.7)} }
+  .btn-refresh {
+    background: var(--surface2); border: 1px solid var(--border); color: var(--accent);
+    font-family: var(--mono); font-size: 11px; padding: 6px 12px; border-radius: 6px; cursor: pointer; transition: 0.2s;
+  }
+  .btn-refresh:hover { border-color: var(--accent); }
+  .spin { animation: spin 1s linear infinite; display: inline-block; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── Grid layout ── */
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+  @media(max-width:720px){ .grid2{ grid-template-columns:1fr; } }
+  .full { grid-column: 1/-1; }
+
+  /* ── Card ── */
+  .card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 22px;
+  }
+  .card-title {
+    font-family: var(--mono); font-size: 10px; letter-spacing: 2px; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 18px; display: flex; align-items: center; gap: 8px;
+  }
+  .card-title::before { content:''; width:3px; height:13px; background:var(--accent); border-radius:2px; display:inline-block; }
+
+  /* ── Form ── */
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .field label { font-family: var(--mono); font-size: 10px; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+  .fgroup { display: flex; flex-direction: column; gap: 13px; }
+
+  input[type=number], input[type=text], select {
+    background: var(--surface2); border: 1px solid var(--border);
+    color: var(--text); font-family: var(--mono); font-size: 13px;
+    padding: 10px 13px; border-radius: 9px; outline: none; width: 100%; transition: border-color 0.2s;
+  }
+  input:focus, select:focus { border-color: var(--accent); }
+  select option { background: var(--surface2); }
+
+  /* ── Buttons ── */
+  .btn { font-family: var(--mono); font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; padding: 11px 18px; border-radius: 9px; border: none; cursor: pointer; transition: all 0.2s; }
+  .btn-primary { background: var(--accent); color: #000; }
+  .btn-primary:hover { filter: brightness(1.15); transform: translateY(-1px); }
+  .btn-sell { background: var(--red-dim); color: var(--red); border: 1px solid rgba(255,77,109,0.3); }
+  .btn-sell:hover { background: rgba(255,77,109,0.25); }
+  .btn-ghost { background: var(--surface2); color: var(--muted); border: 1px solid var(--border); }
+  .btn-ghost:hover { color: var(--text); border-color: var(--accent); }
+  .btn-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 4px; }
+
+  /* ── Stats ── */
+  .stats4 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+  .stat-box { background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 13px 15px; }
+  .stat-lbl { font-family: var(--mono); font-size: 9px; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 5px; }
+  .stat-val { font-family: var(--mono); font-size: 18px; font-weight: 700; }
+  .g { color: var(--accent); } .r { color: var(--red); } .b { color: var(--blue); } .y { color: var(--yellow); }
+
+  /* Progress */
+  .prog-wrap { margin: 12px 0; }
+  .prog-hd { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 10px; color: var(--muted); margin-bottom: 6px; }
+  .prog-track { height: 5px; background: var(--surface2); border-radius: 3px; overflow: hidden; }
+  .prog-fill { height: 100%; border-radius: 3px; background: linear-gradient(90deg, var(--accent), var(--blue)); transition: width 0.5s; }
+
+  /* Alert */
+  .alert { font-family: var(--mono); font-size: 11px; padding: 9px 13px; border-radius: 8px; margin-top: 10px; }
+  .alert.ok { background: var(--accent-dim); color: var(--accent); border: 1px solid rgba(0,230,118,0.2); }
+  .alert.bad { background: var(--red-dim); color: var(--red); border: 1px solid rgba(255,77,109,0.2); }
+
+  /* Fee preview */
+  .fee-note { font-family: var(--mono); font-size: 10px; color: var(--muted); margin-top: 6px; line-height: 1.7; }
+
+  /* Tx list */
+  .tx-list { display: flex; flex-direction: column; gap: 7px; max-height: 300px; overflow-y: auto; padding-right: 3px; }
+  .tx-list::-webkit-scrollbar { width: 3px; }
+  .tx-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+  .tx-item {
+    display: grid; grid-template-columns: auto 1fr auto auto; align-items: center;
+    gap: 10px; background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 9px; padding: 9px 13px; font-family: var(--mono); font-size: 11px;
+    animation: fadeIn 0.25s ease;
+  }
+  @keyframes fadeIn { from{opacity:0;transform:translateY(-5px)} to{opacity:1;transform:translateY(0)} }
+  .badge { padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 700; letter-spacing: 1px; }
+  .badge.buy { background: var(--accent-dim); color: var(--accent); }
+  .badge.sell { background: var(--red-dim); color: var(--red); }
+  .tx-detail { color: var(--muted); }
+  .tx-fee-txt { color: var(--red); }
+  .tx-del { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 13px; padding: 2px 5px; border-radius: 4px; transition: 0.2s; }
+  .tx-del:hover { color: var(--red); background: var(--red-dim); }
+  .empty-state { font-family: var(--mono); font-size: 11px; color: var(--muted); text-align: center; padding: 24px; border: 1px dashed var(--border); border-radius: 9px; }
+
+  /* T sim result */
+  .t-result { background: linear-gradient(135deg, var(--accent-dim), var(--blue-dim)); border: 1px solid rgba(0,230,118,0.2); border-radius: 10px; padding: 15px; margin-top: 14px; display: none; }
+  .t-result-title { font-family: var(--mono); font-size: 10px; color: var(--accent); letter-spacing: 2px; text-transform: uppercase; margin-bottom: 12px; }
+  .t-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+  .t-row { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+  .t-row span { color: var(--text); font-weight: 700; }
+  .t-row span.g { color: var(--accent); }
+  .t-row span.r { color: var(--red); }
+
+  /* Tx header row */
+  .tx-header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+  .btn-clear { background: none; border: 1px solid var(--border); color: var(--muted); font-family: var(--mono); font-size: 10px; padding: 6px 12px; border-radius: 7px; cursor: pointer; transition: 0.2s; }
+  .btn-clear:hover { color: var(--red); border-color: var(--red); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- Header -->
+  <div class="header">
+    <div>
+      <div class="logo-text">均摊成本 <em>·</em> 做T计算器</div>
+      <div class="logo-sub">COST BASIS · T-TRADE SIMULATOR</div>
+    </div>
+  </div>
+
+  <!-- Ticker Bar -->
+  <div class="ticker-bar">
+    <div class="ticker-bar-top">
+      <span class="ticker-bar-label">我的股票</span>
+      <div class="ticker-tabs" id="tickerTabs"></div>
+      <div class="add-ticker-wrap">
+        <input class="add-ticker-in" type="text" id="newTickerIn" placeholder="TSLA" maxlength="8"/>
+        <button class="btn-add-ticker" onclick="addTicker()">+ 添加</button>
+      </div>
+    </div>
+    <div class="price-row">
+      <div class="live-price" id="livePrice">---.--</div>
+      <div class="price-badge" id="priceBadge">-- %</div>
+      <button class="btn-refresh" onclick="fetchPrice(true)"><span id="refreshIcon">⟳</span> 刷新</button>
+      <div class="price-meta">
+        <span class="dot" id="liveDot"></span>
+        <span id="priceStatus">未加载</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid2">
+
+    <!-- 持仓设置 -->
+    <div class="card">
+      <div class="card-title">当前持仓</div>
+      <div class="fgroup">
+        <div class="row2">
+          <div class="field">
+            <label>持有股数</label>
+            <input type="number" id="curShares" placeholder="例：100" min="0" step="1" oninput="recalc()"/>
+          </div>
+          <div class="field">
+            <label>平均成本 ($/股)</label>
+            <input type="number" id="curAvg" placeholder="例：52.00" min="0" step="0.01" oninput="recalc()"/>
+          </div>
+        </div>
+        <div class="field">
+          <label>手续费 (每笔固定，美金)</label>
+          <input type="number" id="flatFee" placeholder="例：1.92" min="0" step="0.01" value="1.92" oninput="recalc()"/>
+        </div>
+      </div>
+    </div>
+
+    <!-- 持仓概览 -->
+    <div class="card">
+      <div class="card-title">持仓概览</div>
+      <div class="stats4">
+        <div class="stat-box"><div class="stat-lbl">平均成本</div><div class="stat-val" id="sAvg">--</div></div>
+        <div class="stat-box"><div class="stat-lbl">总股数</div><div class="stat-val b" id="sShares">--</div></div>
+        <div class="stat-box"><div class="stat-lbl">总成本（含费）</div><div class="stat-val" id="sTotalCost">--</div></div>
+        <div class="stat-box"><div class="stat-lbl">市值</div><div class="stat-val" id="sMarket">--</div></div>
+        <div class="stat-box"><div class="stat-lbl">未实现盈亏</div><div class="stat-val" id="sPnl">--</div></div>
+        <div class="stat-box"><div class="stat-lbl">总手续费</div><div class="stat-val r" id="sFees">--</div></div>
+      </div>
+      <div class="prog-wrap">
+        <div class="prog-hd"><span>成本降低进度</span><span id="progPct">0%</span></div>
+        <div class="prog-track"><div class="prog-fill" id="progFill" style="width:0%"></div></div>
+      </div>
+      <div id="alertBox"></div>
+    </div>
+
+    <!-- 添加交易 -->
+    <div class="card">
+      <div class="card-title">添加交易（买入 / 做T卖出）</div>
+      <div class="fgroup">
+        <div class="field">
+          <label>操作类型</label>
+          <select id="txType">
+            <option value="buy">买入 BUY（加仓 / 摊低成本）</option>
+            <option value="sell">卖出 SELL（做T / 止盈）</option>
+          </select>
+        </div>
+        <div class="row2">
+          <div class="field">
+            <label>股数</label>
+            <input type="number" id="txShares" placeholder="例：50" min="0" step="1" oninput="updateFeePreview()"/>
+          </div>
+          <div class="field">
+            <label>价格 ($/股)</label>
+            <input type="number" id="txPrice" placeholder="例：48.00" min="0" step="0.01" oninput="updateFeePreview()"/>
+          </div>
+        </div>
+        <div class="fee-note" id="feePreview"></div>
+        <div class="btn-row">
+          <button class="btn btn-primary" onclick="addTx()">确认添加</button>
+          <button class="btn btn-ghost" onclick="fillLivePrice()">用实时价格</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 做T模拟器 -->
+    <div class="card">
+      <div class="card-title">做T模拟器（降低成本）</div>
+      <div class="fgroup">
+        <div class="row2">
+          <div class="field">
+            <label>卖出价格</label>
+            <input type="number" id="tSell" placeholder="例：55.00" min="0" step="0.01" oninput="simT()"/>
+          </div>
+          <div class="field">
+            <label>买回价格</label>
+            <input type="number" id="tBuy" placeholder="例：50.00" min="0" step="0.01" oninput="simT()"/>
+          </div>
+        </div>
+        <div class="field">
+          <label>做T股数</label>
+          <input type="number" id="tShares" placeholder="例：30" min="0" step="1" oninput="simT()"/>
+        </div>
+        <button class="btn btn-ghost" onclick="fillTPrice()">用实时价格填入卖出</button>
+      </div>
+      <div class="t-result" id="tResult">
+        <div class="t-result-title">⚡ 做T结果预测</div>
+        <div class="t-grid" id="tGrid"></div>
+      </div>
+    </div>
+
+    <!-- 交易记录 -->
+    <div class="card full">
+      <div class="tx-header-row">
+        <div class="card-title" style="margin:0">交易记录</div>
+        <button class="btn-clear" onclick="clearTx()">清空记录</button>
+      </div>
+      <div class="tx-list" id="txList">
+        <div class="empty-state">暂无交易记录，在上方添加买入或卖出</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+const FINNHUB_KEY = 'd7t81npr01qugn09nik0d7t81npr01qugn09nikg';
+
+// ── State ──────────────────────────────────────────────────────────────────
+let tickers = [];        // [{symbol, price, change, pct}]
+let activeTicker = null;
+let positions = {};      // { TQQQ: { shares, avg, transactions:[] }, ... }
+let refreshTimer = null;
+
+// ── LocalStorage ───────────────────────────────────────────────────────────
+function save() {
+  localStorage.setItem('sc_tickers', JSON.stringify(tickers.map(t => t.symbol)));
+  localStorage.setItem('sc_active', activeTicker || '');
+  localStorage.setItem('sc_positions', JSON.stringify(positions));
+  localStorage.setItem('sc_fee', document.getElementById('flatFee').value);
+}
+
+function load() {
+  try {
+    const syms = JSON.parse(localStorage.getItem('sc_tickers') || '["TQQQ"]');
+    tickers = syms.map(s => ({ symbol: s, price: null, change: null, pct: null }));
+    activeTicker = localStorage.getItem('sc_active') || syms[0];
+    positions = JSON.parse(localStorage.getItem('sc_positions') || '{}');
+    const fee = localStorage.getItem('sc_fee');
+    if (fee) document.getElementById('flatFee').value = fee;
+    // ensure position exists
+    tickers.forEach(t => { if (!positions[t.symbol]) positions[t.symbol] = { shares: 0, avg: 0, transactions: [] }; });
+  } catch(e) {
+    tickers = [{ symbol: 'TQQQ', price: null, change: null, pct: null }];
+    activeTicker = 'TQQQ';
+    positions = { TQQQ: { shares: 0, avg: 0, transactions: [] } };
+  }
+}
+
+// ── Ticker Tabs ────────────────────────────────────────────────────────────
+function renderTabs() {
+  const container = document.getElementById('tickerTabs');
+  container.innerHTML = tickers.map(t => `
+    <div class="ticker-tab ${t.symbol === activeTicker ? 'active' : ''}" onclick="switchTicker('${t.symbol}')">
+      ${t.symbol}
+      <span class="tab-price">${t.price ? '$' + t.price.toFixed(2) : '---'}</span>
+      <button class="tab-remove" onclick="removeTicker(event,'${t.symbol}')">✕</button>
+    </div>
+  `).join('');
+}
+
+function switchTicker(sym) {
+  // save current form values into the position
+  syncFormToPosition();
+  activeTicker = sym;
+  loadPositionToForm();
+  renderTabs();
+  updatePriceDisplay();
+  recalc();
+  save();
+}
+
+function addTicker() {
+  const sym = document.getElementById('newTickerIn').value.trim().toUpperCase();
+  if (!sym) return;
+  if (tickers.find(t => t.symbol === sym)) { switchTicker(sym); document.getElementById('newTickerIn').value=''; return; }
+  tickers.push({ symbol: sym, price: null, change: null, pct: null });
+  if (!positions[sym]) positions[sym] = { shares: 0, avg: 0, transactions: [] };
+  document.getElementById('newTickerIn').value = '';
+  switchTicker(sym);
+  fetchAllPrices();
+  save();
+}
+
+function removeTicker(e, sym) {
+  e.stopPropagation();
+  if (tickers.length === 1) return alert('至少保留一个股票');
+  if (!confirm(`删除 ${sym}？`)) return;
+  tickers = tickers.filter(t => t.symbol !== sym);
+  if (activeTicker === sym) activeTicker = tickers[0].symbol;
+  renderTabs();
+  loadPositionToForm();
+  updatePriceDisplay();
+  recalc();
+  save();
+}
+
+document.getElementById('newTickerIn').addEventListener('keydown', e => { if (e.key === 'Enter') addTicker(); });
+
+// ── Form <-> Position sync ─────────────────────────────────────────────────
+function syncFormToPosition() {
+  if (!activeTicker) return;
+  if (!positions[activeTicker]) positions[activeTicker] = { shares: 0, avg: 0, transactions: [] };
+  positions[activeTicker].shares = parseFloat(document.getElementById('curShares').value) || 0;
+  positions[activeTicker].avg    = parseFloat(document.getElementById('curAvg').value) || 0;
+}
+
+function loadPositionToForm() {
+  const p = positions[activeTicker] || { shares: 0, avg: 0 };
+  document.getElementById('curShares').value = p.shares || '';
+  document.getElementById('curAvg').value    = p.avg || '';
+}
+
+// ── Price Fetch (Finnhub) ──────────────────────────────────────────────────
+async function fetchAllPrices() {
+  for (const t of tickers) {
+    await fetchOneTicker(t.symbol);
+  }
+  renderTabs();
+  updatePriceDisplay();
+  recalc();
+  clearTimeout(refreshTimer);
+  refreshTimer = setTimeout(fetchAllPrices, 60000);
+}
+
+async function fetchOneTicker(sym) {
+  // Try multiple methods in order
+  const methods = [
+    // Method 1: Finnhub direct (works on GitHub Pages / some browsers)
+    async () => {
+      const res = await fetch(`https://finnhub.io/api/v1/quote?symbol=${sym}&token=${FINNHUB_KEY}`, { signal: AbortSignal.timeout(5000) });
+      const d = await res.json();
+      if (!d.c || d.c === 0) throw new Error('no data');
+      return { price: d.c, change: d.d, pct: d.dp };
+    },
+    // Method 2: allorigins proxy → Finnhub
+    async () => {
+      const url = encodeURIComponent(`https://finnhub.io/api/v1/quote?symbol=${sym}&token=${FINNHUB_KEY}`);
+      const res = await fetch(`https://api.allorigins.win/get?url=${url}`, { signal: AbortSignal.timeout(8000) });
+      const wrapper = await res.json();
+      const d = JSON.parse(wrapper.contents);
+      if (!d.c || d.c === 0) throw new Error('no data');
+      return { price: d.c, change: d.d, pct: d.dp };
+    },
+    // Method 3: corsproxy.io → Finnhub
+    async () => {
+      const url = `https://corsproxy.io/?url=${encodeURIComponent(`https://finnhub.io/api/v1/quote?symbol=${sym}&token=${FINNHUB_KEY}`)}`;
+      const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+      const d = await res.json();
+      if (!d.c || d.c === 0) throw new Error('no data');
+      return { price: d.c, change: d.d, pct: d.dp };
+    },
+    // Method 4: allorigins proxy → Yahoo Finance (last resort)
+    async () => {
+      const yhUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${sym}?interval=1m&range=1d`;
+      const url = `https://api.allorigins.win/get?url=${encodeURIComponent(yhUrl)}`;
+      const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+      const wrapper = await res.json();
+      const d = JSON.parse(wrapper.contents);
+      const meta = d.chart?.result?.[0]?.meta;
+      if (!meta?.regularMarketPrice) throw new Error('no data');
+      const price = meta.regularMarketPrice;
+      const prev  = meta.previousClose || meta.chartPreviousClose;
+      const change = price - prev;
+      const pct    = prev > 0 ? (change / prev * 100) : 0;
+      return { price, change, pct };
+    }
+  ];
+
+  for (const method of methods) {
+    try {
+      const result = await method();
+      const t = tickers.find(x => x.symbol === sym);
+      if (t) { t.price = result.price; t.change = result.change; t.pct = result.pct; }
+      return; // success
+    } catch(e) { continue; }
+  }
+  // All failed
+  console.warn(`无法获取 ${sym} 的价格`);
+}
+
+async function fetchPrice(manual = false) {
+  const icon = document.getElementById('refreshIcon');
+  const status = document.getElementById('priceStatus');
+  const dot = document.getElementById('liveDot');
+  icon.innerHTML = '<span class="spin">⟳</span>';
+  status.textContent = '获取中...';
+  await fetchOneTicker(activeTicker);
+  renderTabs();
+  updatePriceDisplay();
+  recalc();
+  icon.innerHTML = '⟳';
+  clearTimeout(refreshTimer);
+  refreshTimer = setTimeout(fetchAllPrices, 60000);
+}
+
+function updatePriceDisplay() {
+  const t = tickers.find(x => x.symbol === activeTicker);
+  const priceEl  = document.getElementById('livePrice');
+  const badgeEl  = document.getElementById('priceBadge');
+  const statusEl = document.getElementById('priceStatus');
+  const dot      = document.getElementById('liveDot');
+
+  if (!t || !t.price) {
+    priceEl.textContent  = '---.--';
+    badgeEl.textContent  = '-- %';
+    statusEl.textContent = '未加载';
+    dot.className = 'dot';
+    return;
+  }
+
+  priceEl.textContent = '$' + t.price.toFixed(2);
+  priceEl.className   = 'live-price' + (t.change < 0 ? ' down' : '');
+  const sign = t.pct >= 0 ? '+' : '';
+  badgeEl.textContent = sign + t.pct.toFixed(2) + '%';
+  badgeEl.className   = 'price-badge' + (t.pct < 0 ? ' neg' : '');
+  statusEl.textContent = '✓ 已更新 ' + new Date().toLocaleTimeString('zh-CN');
+  dot.className = 'dot live';
+}
+
+// ── Calculation ────────────────────────────────────────────────────────────
+function getFee() { return parseFloat(document.getElementById('flatFee').value) || 0; }
+
+function calcPosition() {
+  const p = positions[activeTicker];
+  if (!p) return { totalShares:0, totalCost:0, avgCost:0, totalFees:0 };
+  const initShares = parseFloat(document.getElementById('curShares').value) || 0;
+  const initAvg    = parseFloat(document.getElementById('curAvg').value) || 0;
+
+  let totalShares = initShares;
+  let totalCost   = initShares * initAvg;
+  let totalFees   = 0;
+
+  for (const tx of (p.transactions || [])) {
+    const fee = tx.fee || 0;
+    if (tx.type === 'buy') {
+      totalCost   += tx.shares * tx.price + fee;
+      totalShares += tx.shares;
+      totalFees   += fee;
+    } else {
+      if (totalShares <= 0) continue;
+      const avgNow = totalCost / totalShares;
+      totalCost    -= avgNow * tx.shares;
+      totalShares  -= tx.shares;
+      totalFees    += fee;
+    }
+  }
+  const avgCost = totalShares > 0 ? totalCost / totalShares : 0;
+  return { totalShares, totalCost, avgCost, totalFees };
+}
+
+function recalc() {
+  syncFormToPosition();
+  const { totalShares, totalCost, avgCost, totalFees } = calcPosition();
+  const livePrice = tickers.find(t => t.symbol === activeTicker)?.price;
+
+  document.getElementById('sAvg').textContent       = avgCost > 0 ? '$' + avgCost.toFixed(3) : '--';
+  document.getElementById('sShares').textContent    = totalShares > 0 ? totalShares.toFixed(0) : '--';
+  document.getElementById('sTotalCost').textContent = totalCost > 0 ? '$' + totalCost.toFixed(2) : '--';
+  document.getElementById('sFees').textContent      = '-$' + totalFees.toFixed(2);
+
+  if (livePrice && totalShares > 0) {
+    const mkt = livePrice * totalShares;
+    const pnl = mkt - totalCost;
+    const pct = totalCost > 0 ? (pnl / totalCost) * 100 : 0;
+    document.getElementById('sMarket').textContent = '$' + mkt.toFixed(2);
+    const pnlEl = document.getElementById('sPnl');
+    pnlEl.textContent = (pnl >= 0 ? '+$' : '-$') + Math.abs(pnl).toFixed(2) + ' (' + (pnl >= 0 ? '+' : '') + pct.toFixed(2) + '%)';
+    pnlEl.className = 'stat-val ' + (pnl >= 0 ? 'g' : 'r');
+
+    const origAvg = parseFloat(document.getElementById('curAvg').value) || avgCost;
+    const redPct  = origAvg > 0 ? Math.max(0, Math.min(100, (origAvg - avgCost) / origAvg * 100)) : 0;
+    document.getElementById('progFill').style.width = redPct + '%';
+    document.getElementById('progPct').textContent  = redPct.toFixed(1) + '% 已降低';
+
+    const alertEl = document.getElementById('alertBox');
+    if (livePrice >= avgCost) {
+      alertEl.className = 'alert ok';
+      alertEl.textContent = '✓ 当前价高于成本价 $' + (livePrice - avgCost).toFixed(3) + ' / 股';
+    } else {
+      alertEl.className = 'alert bad';
+      alertEl.textContent = '↓ 当前价低于成本价 $' + (avgCost - livePrice).toFixed(3) + ' / 股，继续做T摊低成本';
+    }
+  } else {
+    document.getElementById('sMarket').textContent = '--';
+    document.getElementById('sPnl').textContent    = '--';
+    document.getElementById('alertBox').textContent = '';
+  }
+
+  renderTxList();
+  updateFeePreview();
+  simT();
+  save();
+}
+
+// ── Add Transaction ────────────────────────────────────────────────────────
+function addTx() {
+  const type   = document.getElementById('txType').value;
+  const shares = parseFloat(document.getElementById('txShares').value);
+  const price  = parseFloat(document.getElementById('txPrice').value);
+  if (!shares || !price || shares <= 0 || price <= 0) return alert('请输入有效的股数和价格');
+
+  const { totalShares } = calcPosition();
+  if (type === 'sell' && shares > totalShares) return alert('卖出股数不能超过持有股数 (' + totalShares + ')');
+
+  const fee = getFee();
+  if (!positions[activeTicker]) positions[activeTicker] = { shares: 0, avg: 0, transactions: [] };
+  positions[activeTicker].transactions.push({ type, shares, price, fee });
+
+  document.getElementById('txShares').value = '';
+  document.getElementById('txPrice').value  = '';
+  recalc();
+}
+
+function fillLivePrice() {
+  const t = tickers.find(x => x.symbol === activeTicker);
+  if (t?.price) document.getElementById('txPrice').value = t.price.toFixed(2);
+}
+
+function updateFeePreview() {
+  const shares = parseFloat(document.getElementById('txShares').value) || 0;
+  const price  = parseFloat(document.getElementById('txPrice').value) || 0;
+  const el = document.getElementById('feePreview');
+  if (shares > 0 && price > 0) {
+    const fee   = getFee();
+    const total = shares * price;
+    el.textContent = `交易金额：$${total.toFixed(2)}　手续费：$${fee.toFixed(2)}　合计：$${(total + fee).toFixed(2)}`;
+  } else { el.textContent = ''; }
+}
+
+function renderTxList() {
+  const p = positions[activeTicker];
+  const list = document.getElementById('txList');
+  if (!p || !p.transactions || p.transactions.length === 0) {
+    list.innerHTML = '<div class="empty-state">暂无交易记录，在上方添加买入或卖出</div>';
+    return;
+  }
+  list.innerHTML = p.transactions.map((tx, i) => `
+    <div class="tx-item">
+      <span class="badge ${tx.type}">${tx.type === 'buy' ? '买入' : '卖出'}</span>
+      <span class="tx-detail">${tx.shares} 股 @ $${tx.price.toFixed(2)}</span>
+      <span class="tx-fee-txt">费：$${tx.fee.toFixed(2)}</span>
+      <button class="tx-del" onclick="delTx(${i})">✕</button>
+    </div>
+  `).join('');
+}
+
+function delTx(i) {
+  positions[activeTicker].transactions.splice(i, 1);
+  recalc();
+}
+
+function clearTx() {
+  if (!confirm('清空当前股票的所有交易记录？')) return;
+  if (positions[activeTicker]) positions[activeTicker].transactions = [];
+  recalc();
+}
+
+// ── T Simulator ────────────────────────────────────────────────────────────
+function simT() {
+  const sellPrice = parseFloat(document.getElementById('tSell').value);
+  const buyPrice  = parseFloat(document.getElementById('tBuy').value);
+  const tSh       = parseFloat(document.getElementById('tShares').value);
+  const el        = document.getElementById('tResult');
+  if (!sellPrice || !buyPrice || !tSh || tSh <= 0) { el.style.display = 'none'; return; }
+
+  const { avgCost, totalShares, totalCost } = calcPosition();
+  if (totalShares <= 0 || avgCost <= 0) { el.style.display = 'none'; return; }
+
+  const fee = getFee();
+  const sellNet  = tSh * sellPrice - fee;
+  const buyCost  = tSh * buyPrice  + fee;
+  const netProfit = sellNet - buyCost;
+
+  const costOfSold = avgCost * tSh;
+  const newTotalCost = totalCost - costOfSold + buyCost;
+  const newAvg = newTotalCost / totalShares;
+  const drop   = avgCost - newAvg;
+  const dropPct = avgCost > 0 ? (drop / avgCost * 100) : 0;
+  const tradesTo0 = drop > 0 ? Math.ceil(avgCost / drop) : null;
+
+  el.style.display = 'block';
+  document.getElementById('tGrid').innerHTML = `
+    <div class="t-row">做T净利润：<span class="${netProfit >= 0 ? 'g' : 'r'}">${netProfit >= 0 ? '+' : ''}$${netProfit.toFixed(2)}</span></div>
+    <div class="t-row">卖出手续费：<span class="r">-$${fee.toFixed(2)}</span></div>
+    <div class="t-row">新平均成本：<span>$${newAvg.toFixed(3)}</span></div>
+    <div class="t-row">买回手续费：<span class="r">-$${fee.toFixed(2)}</span></div>
+    <div class="t-row">每股降低：<span class="g">${drop > 0 ? '-$' + drop.toFixed(3) : '⚠ 无效'}</span></div>
+    <div class="t-row">降低幅度：<span>${dropPct.toFixed(2)}%</span></div>
+    <div class="t-row">做T到接近0需：<span>${tradesTo0 ? tradesTo0 + ' 次' : 'N/A（亏损）'}</span></div>
+    <div class="t-row">本次总手续费：<span class="r">-$${(fee * 2).toFixed(2)}</span></div>
+  `;
+}
+
+function fillTPrice() {
+  const t = tickers.find(x => x.symbol === activeTicker);
+  if (t?.price) { document.getElementById('tSell').value = t.price.toFixed(2); simT(); }
+}
+
+// ── Init ───────────────────────────────────────────────────────────────────
+load();
+renderTabs();
+loadPositionToForm();
+recalc();
+fetchAllPrices();
+</script>
+</body>
+</html>
